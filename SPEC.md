@@ -225,12 +225,18 @@ Per window:
 1. **Accumulation texture**, `Rgba32Float` (or `Rgba16Float` if 32-bit float blending is
    unavailable), at the window's physical size, holding `(r·w, g·w, b·w, w)`.
 2. **Splat pass**: the frame's splats are uploaded as an instance buffer
-   (position, colour) and drawn as quads of size `2r+1` with additive blending; the
-   fragment shader computes the Gaussian weight and discards below 0.01. The buffer is
-   never cleared during a scene.
+   (pixel position, LUT index; the LUT is a uniform) and drawn as quads covering the
+   pixels `round(p) ± r`, with additive blending; the fragment shader computes the
+   Gaussian weight and discards below 0.01. As in `flow.js`, pixel `i` is centred on
+   coordinate `i`. Splats whose footprint misses the screen are dropped on the CPU. The
+   accumulation texture is never cleared during a scene.
 3. **Tone-map pass**: full-screen triangle reading the accumulation texture, applying the
    formula from §1 and the scene fade factor, writing to the swapchain.
 4. **Glow pass**: spark heads (and tails, if used) as additive quads on top.
+
+The tone-map pass writes raw values like `flow.js` does, so the swapchain must use a
+non-sRGB format (or a non-sRGB view of it); an sRGB target would gamma-encode the image
+and the screen would no longer match the snapshot.
 
 Present mode `Fifo` (vsync). Clamp `dt` to 50 ms so a stalled frame does not make sparks
 jump.
@@ -264,7 +270,7 @@ CLI flags:
 | `--seed <u64>` | First scene seed. |
 | `--system <name>` | Force the system for every scene. |
 | `--output <name>` | Only open on this monitor. |
-| `--snapshot <path.png>` | Headless: run one scene offscreen at a fixed `dt` until it ends, write the final image, exit. Takes `--size WxH` (default 2560x1440). |
+| `--snapshot <path.png>` | Headless: trace the whole scene in one go, write the final image, exit. Splats add up in any order, so this is the last frame of the live animation. Takes `--size WxH` (default 2560x1440). |
 | `--config <path>` | Alternative config file. |
 | `--sparks <n>`, `--trajectories <n>` | Override the config values, mostly for trying values in snapshots. |
 

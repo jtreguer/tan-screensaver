@@ -51,31 +51,21 @@ impl Scene {
             &choices.systems
         };
         let kind = systems[rng.below(systems.len())];
-        let specs = kind.params();
 
-        let (params, preset, cx, cy, span);
+        let (field, preset, cx, cy, span);
         if rng.chance(PRESET_CHANCE) {
             let p = &kind.presets()[rng.below(kind.presets().len())];
-            params = p
-                .params
-                .iter()
-                .zip(specs)
-                .map(|(&v, s)| {
-                    (v * rng.range(1.0 - PRESET_JITTER, 1.0 + PRESET_JITTER)).clamp(s.min, s.max)
-                })
-                .collect::<Vec<_>>();
+            field = p.field.map(|s, v| {
+                (v * rng.range(1.0 - PRESET_JITTER, 1.0 + PRESET_JITTER)).clamp(s.min, s.max)
+            });
             (preset, cx, cy, span) = (Some(p.name), p.cx, p.cy, p.span);
         } else {
-            params = specs
-                .iter()
-                .map(|s| rng.range(s.scene_min, s.scene_max))
-                .collect();
+            field = Field::from_fn(kind, |s| rng.range(s.scene_min, s.scene_max));
             preset = None;
             span = rng.log_range(SPAN_RANGE.0, SPAN_RANGE.1);
             cx = rng.range(-std::f64::consts::PI, std::f64::consts::PI);
             cy = rng.range(-std::f64::consts::PI, std::f64::consts::PI);
         }
-        let field = Field::new(kind, &params).expect("one value per parameter spec");
 
         let all_palettes: Vec<usize> = (0..PALETTES.len()).collect();
         let palettes = if choices.palettes.is_empty() {
@@ -112,6 +102,33 @@ impl Scene {
             background,
             start_seed,
         }
+    }
+}
+
+impl std::fmt::Display for Scene {
+    /// One line for the log; enough to recreate the scene in the web app.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = self.field.kind();
+        write!(f, "seed {} {}", self.seed, kind.name())?;
+        for (spec, v) in kind.params().iter().zip(self.field.params()) {
+            write!(f, " {}={v:.3}", spec.name)?;
+        }
+        if let Some(name) = self.preset {
+            write!(f, " (preset {name:?})")?;
+        }
+        let [r, g, b] = self.background;
+        write!(
+            f,
+            " view cx={:.3} cy={:.3} span={:.2} palette {}{} {:?} kappa0={:.2} bg #{r:02x}{g:02x}{b:02x} start seed {}",
+            self.cx,
+            self.cy,
+            self.span,
+            PALETTES[self.palette].name,
+            if self.reversed { " reversed" } else { "" },
+            self.colour_mode,
+            self.kappa0,
+            self.start_seed,
+        )
     }
 }
 

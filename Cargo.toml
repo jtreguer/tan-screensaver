@@ -6,6 +6,11 @@ description = "Screensaver for Omarchy drawing the trajectories of tan() flow fi
 publish = false
 
 [dependencies]
+bytemuck = { version = "1.25.2", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
+png = "0.18.1"
+pollster = "1.0.1"
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
 
 [dev-dependencies]
 serde = { version = "1.0.229", features = ["derive"] }

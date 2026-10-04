@@ -20,8 +20,7 @@ pub struct ParamSpec {
 
 pub struct Preset {
     pub name: &'static str,
-    /// In the order of `SystemKind::params`.
-    pub params: &'static [f64],
+    pub field: Field,
     pub cx: f64,
     pub cy: f64,
     pub span: f64,
@@ -42,22 +41,22 @@ const SPIRAL_PARAMS: [ParamSpec; 2] = [
 
 #[rustfmt::skip]
 const WHIRLPOOL_PRESETS: [Preset; 6] = [
-    Preset { name: "Whirlpools (original)", params: &[1.3, 1.0, 0.15], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Slow drift", params: &[1.45, 1.0, 0.05], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Tight vortices", params: &[1.0, 1.0, 0.3], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Wide field", params: &[1.3, 1.0, 0.08], cx: 0.0, cy: 0.0, span: 30.0 },
-    Preset { name: "High frequency", params: &[1.4, 2.2, 0.12], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Off-centre close-up", params: &[1.35, 1.0, 0.1], cx: 3.2, cy: 3.0, span: 7.0 },
+    Preset { name: "Whirlpools (original)", field: Field::Whirlpools { k: 1.3, w: 1.0, d: 0.15 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Slow drift", field: Field::Whirlpools { k: 1.45, w: 1.0, d: 0.05 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Tight vortices", field: Field::Whirlpools { k: 1.0, w: 1.0, d: 0.3 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Wide field", field: Field::Whirlpools { k: 1.3, w: 1.0, d: 0.08 }, cx: 0.0, cy: 0.0, span: 30.0 },
+    Preset { name: "High frequency", field: Field::Whirlpools { k: 1.4, w: 2.2, d: 0.12 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Off-centre close-up", field: Field::Whirlpools { k: 1.35, w: 1.0, d: 0.1 }, cx: 3.2, cy: 3.0, span: 7.0 },
 ];
 
 #[rustfmt::skip]
 const SPIRAL_PRESETS: [Preset; 6] = [
-    Preset { name: "Spiral garden (original)", params: &[0.6, 1.0], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Gentle", params: &[0.3, 1.0], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Strong shear", params: &[1.0, 1.0], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Shear-dominated", params: &[1.3, 0.5], cx: 0.0, cy: 0.0, span: 12.6 },
-    Preset { name: "Wide field", params: &[0.6, 1.0], cx: 0.0, cy: 0.0, span: 30.0 },
-    Preset { name: "Close-up", params: &[0.7, 1.0], cx: 0.8, cy: -0.8, span: 6.0 },
+    Preset { name: "Spiral garden (original)", field: Field::Spirals { a: 0.6, b: 1.0 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Gentle", field: Field::Spirals { a: 0.3, b: 1.0 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Strong shear", field: Field::Spirals { a: 1.0, b: 1.0 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Shear-dominated", field: Field::Spirals { a: 1.3, b: 0.5 }, cx: 0.0, cy: 0.0, span: 12.6 },
+    Preset { name: "Wide field", field: Field::Spirals { a: 0.6, b: 1.0 }, cx: 0.0, cy: 0.0, span: 30.0 },
+    Preset { name: "Close-up", field: Field::Spirals { a: 0.7, b: 1.0 }, cx: 0.8, cy: -0.8, span: 6.0 },
 ];
 
 impl SystemKind {
@@ -96,6 +95,36 @@ pub enum Field {
 }
 
 impl Field {
+    /// Builds a field by asking `value` for each parameter, in the order of
+    /// `kind.params()`.
+    pub fn from_fn(kind: SystemKind, mut value: impl FnMut(&ParamSpec) -> f64) -> Field {
+        match kind {
+            SystemKind::Whirlpools => {
+                let [k, w, d] = &WHIRLPOOL_PARAMS;
+                Field::Whirlpools {
+                    k: value(k),
+                    w: value(w),
+                    d: value(d),
+                }
+            }
+            SystemKind::Spirals => {
+                let [a, b] = &SPIRAL_PARAMS;
+                Field::Spirals {
+                    a: value(a),
+                    b: value(b),
+                }
+            }
+        }
+    }
+
+    /// Applies `f` to each parameter, in the order of `kind.params()`.
+    pub fn map(&self, mut f: impl FnMut(&ParamSpec, f64) -> f64) -> Field {
+        let mut values = self.params().into_iter();
+        Field::from_fn(self.kind(), |spec| {
+            f(spec, values.next().unwrap_or(spec.min))
+        })
+    }
+
     /// `params` in the order of `kind.params()`; returns None on a wrong count.
     pub fn new(kind: SystemKind, params: &[f64]) -> Option<Field> {
         match (kind, params) {
@@ -141,11 +170,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn presets_have_one_value_per_param_within_slider_range() {
+    fn presets_match_their_system_and_slider_ranges() {
         for kind in SystemKind::ALL {
             for p in kind.presets() {
-                assert!(Field::new(kind, p.params).is_some(), "{}", p.name);
-                for (v, spec) in p.params.iter().zip(kind.params()) {
+                assert_eq!(p.field.kind(), kind, "{}", p.name);
+                for (v, spec) in p.field.params().iter().zip(kind.params()) {
                     assert!(
                         (spec.min..=spec.max).contains(v),
                         "{} {}",
