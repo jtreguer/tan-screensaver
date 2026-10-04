@@ -1,0 +1,12 @@
+[package]
+name = "tan-screensaver"
+version = "0.1.0"
+edition = "2021"
+description = "Screensaver for Omarchy drawing the trajectories of tan() flow fields"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.6"
