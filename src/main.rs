@@ -36,6 +36,9 @@ struct Cli {
     /// Start points in flight per screen.
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     sparks: Option<u32>,
+    /// Only open on this monitor (connector name, as in `hyprctl monitors`).
+    #[arg(long, value_name = "NAME")]
+    output: Option<String>,
     /// Config file instead of ~/.config/tan-screensaver/config.toml.
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
@@ -86,16 +89,15 @@ fn main() -> ExitCode {
     }
     let seed = cli.seed.unwrap_or_else(random_seed);
 
-    let result = match (&cli.snapshot, cli.windowed) {
-        (Some(path), _) => run_snapshot(path, seed, &settings, &choices, cli.size),
-        (None, true) => app::run(app::Options {
+    let result = match &cli.snapshot {
+        Some(path) => run_snapshot(path, seed, &settings, &choices, cli.size),
+        None => app::run(app::Options {
             seed,
             settings,
             choices,
+            windowed: cli.windowed,
+            output: cli.output,
         }),
-        (None, false) => {
-            Err("fullscreen is not available yet; use --windowed or --snapshot".into())
-        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

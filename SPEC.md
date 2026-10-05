@@ -156,9 +156,10 @@ the speed is set per scene to aim at a target duration (default 90 s):
    [`min_speed`, `max_speed`] (defaults 120 and 600 px/s at 1440 px height, scaled with
    the height). The clamp means some scenes run shorter or longer than the target; the
    final image is never cut short.
-3. The pass is pure and deterministic. It runs on a worker thread, started for the next
-   scene while the current one holds and fades, so the next scene can start without a
-   pause. Scenes come out about 5–15% over the target, mostly from the last seconds,
+3. The pass is pure and deterministic. It takes 0.3 to 0.9 s at 2560×1440, so it always
+   runs on a worker thread and the event loop keeps handling input: for the first scene
+   (and after a resize) while the screen stays at the background, and for the next scene
+   while the current one holds and fades, so it can start without a pause. Scenes come out about 5–15% over the target, mostly from the last seconds,
    when the remaining heads finish one by one.
 
 When the scene ends:
@@ -176,14 +177,27 @@ The screensaver exits, closing all its windows, on:
 
 - any key press,
 - any mouse button or scroll,
-- pointer motion of more than 10 px from the first position seen (Wayland sends a motion
-  event when the pointer enters the surface; that one must not count), ignoring all motion
-  in the first 500 ms,
+- pointer motion of more than 10 px (physical) from an anchor position (Wayland sends a
+  motion event when the pointer enters the surface; that one must not count). Motion in
+  the first 500 ms only moves the anchor; after that the anchor is fixed, and motion
+  reported by a different window than the anchor's counts as moving,
 - loss of focus of all its windows (the lock screen taking over, for instance), matching
-  what `omarchy-screensaver` does,
-- SIGINT, SIGTERM, SIGHUP.
+  what `omarchy-screensaver` does. The loss must last 300 ms: focus moving between the
+  screensaver's own windows arrives as a loss then a gain, and Hyprland does that right
+  after the windows open. A process none of whose windows ever had focus never exits
+  this way,
+- SIGINT, SIGTERM, SIGHUP. The handler writes to a socket that a thread passes on to the
+  event loop, and the process exits with status 0. If the loop has not ended 2 s later
+  (stuck in a present on a stalled compositor, say), or a second signal arrives, that
+  thread exits the process itself.
 
-The cursor is hidden over the screensaver windows.
+The cursor is hidden over the screensaver windows through winit, per surface. Omarchy's
+own screensaver hides it globally with `hyprctl` because a terminal cannot; this one does
+not need to, and so has nothing to restore if it is killed.
+
+Testing note: Hyprland's `cursor.move` dispatcher moves the pointer without sending a
+`wl_pointer.frame`, and winit holds pointer events until a frame arrives, so a single
+scripted warp is not seen until the next one. A real mouse sends frames.
 
 ### Multiple monitors
 
@@ -192,10 +206,13 @@ scene sized to that monitor's physical pixels (this machine has 1920×1080 and 2
 both at scale 1.25; render at physical resolution, not logical). Input on any window ends
 all of them.
 
-If Hyprland's window rules for `org.omarchy.screensaver` (fullscreen + float) fight with
-per-output fullscreen requests, fall back to what Omarchy does: the launcher focuses each
-monitor in turn and starts one process per monitor with `--output <name>`, and a process
-that exits kills its siblings.
+Each window asks for fullscreen on its monitor before it maps. On Hyprland 0.56 this works
+together with Omarchy's rules for `org.omarchy.screensaver` (fullscreen + float): every
+window lands on the monitor it asked for. Had it not, the fallback was Omarchy's approach,
+one process per monitor started by the launcher with `--output <name>`.
+
+Monitors are sorted by name. The first one runs the `--seed` sequence, so it matches
+`--snapshot` with the same seed; the others get sequences derived from it.
 
 ## 3. Architecture
 
@@ -220,6 +237,7 @@ the safer codebase and the easier dependency handling through cargo.
 | `render` | wgpu pipelines: splat pass, tone-map pass, glow pass, fade. |
 | `app` | winit event loop, one state per window, input handling, exit. |
 | `config` | Config file and CLI flags. |
+| `signals` | SIGINT, SIGTERM and SIGHUP to an event-loop wake-up, with a few hand-declared libc calls rather than a crate. |
 
 `field`, `integrate`, `palette`, `scene`, `sim` and `budget` must not depend on wgpu or
 winit, so they can be unit tested and used by the snapshot mode.
