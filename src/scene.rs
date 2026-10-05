@@ -12,7 +12,7 @@ const SIGNED_CHANCE: f64 = 0.3;
 const KAPPA0_RANGE: (f64, f64) = (0.6, 3.0);
 const PALETTE_BG_CHANCE: f64 = 0.5;
 const PALETTE_BG_LUMA: f64 = 0.06;
-const PLAIN_BG: u32 = 0x0b0c10;
+pub const PLAIN_BACKGROUND: u32 = 0x0b0c10;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
@@ -84,7 +84,7 @@ impl Scene {
         let background = if rng.chance(PALETTE_BG_CHANCE) {
             palette_background(palette)
         } else {
-            palette::rgb(PLAIN_BG)
+            palette::rgb(PLAIN_BACKGROUND)
         };
         let start_seed = (rng.next_u64() >> 32) as u32;
 
@@ -103,6 +103,11 @@ impl Scene {
             start_seed,
         }
     }
+}
+
+/// Seed of the scene after `seed`, so one seed reproduces a whole sequence of scenes.
+pub fn next_seed(seed: u64) -> u64 {
+    SplitMix64::new(seed).next_u64()
 }
 
 impl std::fmt::Display for Scene {

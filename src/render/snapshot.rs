@@ -32,7 +32,7 @@ pub fn snapshot(gpu: &Gpu, drawing: &Drawing) -> Result<Vec<u8>, Error> {
     // panics.
     let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
     let out_of_memory = gpu.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-    let renderer = Renderer::new(gpu, w, h, OUTPUT_FORMAT);
+    let mut renderer = Renderer::new(gpu, w, h, OUTPUT_FORMAT);
     let target = gpu.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("snapshot"),
         size: wgpu::Extent3d {
@@ -104,6 +104,9 @@ pub fn snapshot(gpu: &Gpu, drawing: &Drawing) -> Result<Vec<u8>, Error> {
     let mapped = readback
         .get_mapped_range(..)
         .map_err(|e| err("reading readback buffer", e))?;
+    if let Some(fault) = gpu.fault() {
+        return Err(Error(format!("GPU error: {fault}")));
+    }
     let mut pixels = Vec::with_capacity((row_bytes * h) as usize);
     for row in mapped.chunks(padded_row as usize) {
         pixels.extend_from_slice(&row[..row_bytes as usize]);

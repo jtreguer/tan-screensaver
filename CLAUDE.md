@@ -44,15 +44,16 @@ All four checks (build, test, clippy, fmt) must pass before a commit.
 
 ```
 src/
-  main.rs        CLI parsing, dispatch to app or snapshot
+  main.rs        CLI parsing, config loading, dispatch to app or snapshot
   lib.rs         the pure modules, shared by the binary and the tests
   field.rs       equation systems, ranges, presets (pure)
   integrate.rs   RK4, curvature, stop conditions (pure)
   palette.rs     palette stops, LUTs, curvature colouring (pure)
   rng.rs         SplitMix64 for scenes, mulberry32 for start points (pure)
   scene.rs       random scene from a seed (pure)
-  sim.rs         spark pool and per-frame stepping (pure)
+  sim.rs         scene to splats, spark pool, per-frame stepping (pure)
   budget.rs      path-length pre-pass, per-scene speed (pure)
+  cycle.rs       draw, hold, fade phases (pure)
   render/        wgpu pipelines and WGSL shaders
   app.rs         winit event loop, windows, input, exit
   config.rs      config file and flags

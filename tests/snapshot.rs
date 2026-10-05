@@ -49,6 +49,7 @@ impl Image {
         Drawing {
             field: Field::new(kind, &self.params).expect("parameter count"),
             view,
+            step_px: self.step_px,
             h_world,
             max_steps: max_steps(self.arc, h_world),
             start_seed: self.seed,

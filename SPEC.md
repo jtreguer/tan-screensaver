@@ -97,7 +97,8 @@ reason for any change in a comment next to the table in the code.
 
 Each scene has a 64-bit seed. All random choices for the scene come from a PRNG seeded
 with it, so a scene can be reproduced from its seed alone. The seed is logged at scene
-start. Start points are the exception to the PRNG choice: the scene PRNG draws a u32, and
+start. The next scene's seed is derived from the current one (one SplitMix64 step), so
+`--seed` reproduces a whole sequence of scenes. Start points are the exception to the PRNG choice: the scene PRNG draws a u32, and
 the start points come from `mulberry32` seeded with it, in the same order as `flow.js`.
 Splats add up in any order, so the finished screen equals the web app's render of the
 same system, parameters, view, palette and u32 seed, up to float rounding. The snapshot
@@ -111,24 +112,25 @@ tests rely on this.
   with `+h` and one with `−h`, so the curve grows out in both directions. This is the web
   app's "trace backward" option. Tracing backward can be turned off in the config, which
   leaves one head per spark. Each head stops on its own (stop conditions in §1, max arc
-  length per direction); the spark is done when all its heads are.
-- Start points are taken in order from the `mulberry32` stream. When a spark is done, the
-  next start point is taken, so `N` sparks stay in flight until all `trajectories` start
-  points (default 1500) have been used.
+  length per direction).
+- Start points are taken in order from the `mulberry32` stream. The pool holds up to
+  `N × heads per spark` heads, and the next start point comes in as soon as both its
+  heads fit. Waiting for a whole spark to finish left a slot idle while one head ran on
+  alone, and scenes took 1.3 to 1.8 times their target duration.
 - All heads move at the same on-screen speed, set per scene (see "Scene length" below).
   Each frame a head advances by `speed · dt` pixels, split into RK4 steps of 0.5 px, and
   deposits one splat per step into the accumulation buffer.
 - About a third of the start area is the margin outside the screen. Any stretch of a
   head's path that lies outside the screen is integrated at once, without waiting for
-  frames. Its splats fall off screen and would be clipped anyway, so the final image does
+  frames, up to 16384 off-screen steps per frame for all heads together. Its splats fall off screen and would be clipped anyway, so the final image does
   not change, and spark slots do not sit idle on invisible work. A head that comes back
   into the screen continues at normal speed from the point where it enters.
 - Each spark's head is drawn on top of the image as a glow: a small bright core in the
   current palette colour pushed towards white, plus a wider soft halo with additive
   blending. The halo is not written into the accumulation buffer. A short fading tail
   (the last ~25 positions) can be drawn the same way if it looks better; decide by eye.
-- A newly spawned spark fades its head in over ~0.3 s and a dying one fades out, so
-  sparks do not pop.
+- A head's glow fades in over 0.3 s when it appears on screen and fades out where it
+  stops or leaves the screen, so sparks do not pop.
 
 ### Filling and scene end
 
@@ -143,17 +145,21 @@ height, 30 world units of arc is about 1,440 px at span 30 and 7,200 px at span 
 fixed 220 px/s with 160 heads a scene would last anywhere from about 2 to 10 minutes. So
 the speed is set per scene to aim at a target duration (default 90 s):
 
-1. At scene start, a CPU pass integrates every half-trajectory at a coarse step (about
-   4 px) without splatting, and adds up the on-screen path length `L_px`. Off-screen
-   stretches are skipped live (see Sparks), so they do not count.
+1. At scene start, a CPU pass traces an evenly spaced sample of about 192 start points at
+   the real step, without splatting, adds up their on-screen path length and scales it
+   to all start points, giving `L_px`. Off-screen stretches are skipped live (see
+   Sparks), so they do not count. A coarser step over every start point was tried
+   first: it overshoots sinks and keeps circling them where the real step stops at the
+   fixed point, overestimating by up to 50%. The sample is within 10% on the seeds
+   tried.
 2. `speed = L_px / (heads_in_flight · scene_seconds)`, clamped to
    [`min_speed`, `max_speed`] (defaults 120 and 600 px/s at 1440 px height, scaled with
    the height). The clamp means some scenes run shorter or longer than the target; the
    final image is never cut short.
 3. The pass is pure and deterministic. It runs on a worker thread, started for the next
    scene while the current one holds and fades, so the next scene can start without a
-   pause. It is an estimate: sparks finishing at different times leave the last seconds
-   with fewer heads in flight, which is acceptable.
+   pause. Scenes come out about 5–15% over the target, mostly from the last seconds,
+   when the remaining heads finish one by one.
 
 When the scene ends:
 
@@ -266,7 +272,7 @@ CLI flags:
 
 | Flag | Effect |
 |---|---|
-| `--windowed` | Normal window instead of fullscreen; only Escape or closing the window exits. For development. |
+| `--windowed` | Normal window instead of fullscreen; only Escape or closing the window exits. For development. Its app_id is `tan-screensaver-dev`, so Omarchy's rules and idle service do not treat it as the screensaver. |
 | `--seed <u64>` | First scene seed. |
 | `--system <name>` | Force the system for every scene. |
 | `--output <name>` | Only open on this monitor. |
@@ -352,3 +358,7 @@ Consequences for this project:
   once the basics work.
 - Battery: on a laptop on battery, lower the frame rate or spark count. Not needed on this
   desktop; leave a hook for it.
+- Heads that reach a sink circle it in tiny loops until their arc length runs out, as in
+  `flow.js`. Live this shows as a still, glowing dot that uses up animation time. Stopping
+  such heads early (say once they stay within a few pixels for a second) would change
+  the final image slightly, so it is a departure from the web app; decide by watching.
