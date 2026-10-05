@@ -58,7 +58,7 @@ src/
   app.rs         winit event loop, windows, input, exit
   signals.rs     SIGINT/SIGTERM/SIGHUP to the event loop
   config.rs      config file and flags
-scripts/         launcher, install, Omarchy hook install
+scripts/         install.sh, install-omarchy-hook.sh, tan-screensaver-launch, tan-screensaver-select
 tests/fixtures/  reference trajectories, LUTs and RNG output dumped from flow.js
 tools/           dump-fixtures.js: `node tools/dump-fixtures.js` regenerates the fixtures
 ```

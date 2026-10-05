@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Choose which screensaver Omarchy's idle service and menu start: `tan` or `omarchy`
+# (the default). With no argument, print the current choice. The choice is an Omarchy
+# toggle flag, so menu entries can test it with omarchy-toggle-enabled.
+
+flag=tan-screensaver
+
+case ${1:-} in
+tan)
+  omarchy-toggle "$flag" on
+  omarchy-notification-send -g 󱄄 "Screensaver: Tan Trajectories"
+  ;;
+omarchy)
+  omarchy-toggle "$flag" off
+  omarchy-notification-send -g 󱄄 "Screensaver: Omarchy"
+  ;;
+"")
+  omarchy-toggle-enabled "$flag" && echo tan || echo omarchy
+  ;;
+*)
+  echo "Usage: tan-screensaver-select [tan|omarchy]" >&2
+  exit 1
+  ;;
+esac

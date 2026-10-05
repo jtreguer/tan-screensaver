@@ -143,7 +143,8 @@ when the last head has stopped. There is no coverage measurement.
 With a fixed amount of ink, the time a scene takes depends on its view. At 1440 px
 height, 30 world units of arc is about 1,440 px at span 30 and 7,200 px at span 6; at a
 fixed 220 px/s with 160 heads a scene would last anywhere from about 2 to 10 minutes. So
-the speed is set per scene to aim at a target duration (default 90 s):
+the speed is set per scene to aim at a target duration (default 180 s; with 90 s and a
+600 px/s cap, as first planned, most scenes ran at 290–540 px/s, which looked hurried):
 
 1. At scene start, a CPU pass traces an evenly spaced sample of about 192 start points at
    the real step, without splatting, adds up their on-screen path length and scales it
@@ -153,14 +154,15 @@ the speed is set per scene to aim at a target duration (default 90 s):
    fixed point, overestimating by up to 50%. The sample is within 10% on the seeds
    tried.
 2. `speed = L_px / (heads_in_flight · scene_seconds)`, clamped to
-   [`min_speed`, `max_speed`] (defaults 120 and 600 px/s at 1440 px height, scaled with
+   [`min_speed`, `max_speed`] (defaults 120 and 300 px/s at 1440 px height, scaled with
    the height). The clamp means some scenes run shorter or longer than the target; the
    final image is never cut short.
 3. The pass is pure and deterministic. It takes 0.3 to 0.9 s at 2560×1440, so it always
    runs on a worker thread and the event loop keeps handling input: for the first scene
    (and after a resize) while the screen stays at the background, and for the next scene
-   while the current one holds and fades, so it can start without a pause. Scenes come out about 5–15% over the target, mostly from the last seconds,
-   when the remaining heads finish one by one.
+   while the current one holds and fades, so it can start without a pause.
+4. Scenes come out about 5–15% over the target, mostly from the last seconds, when the
+   remaining heads finish one by one.
 
 When the scene ends:
 
@@ -274,9 +276,9 @@ sparks = 80              # start points in flight per screen (two heads each)
 trajectories = 1500      # start points per scene, as in the web app
 arc_length = 30          # world units per direction
 trace_backward = true
-scene_seconds = 90       # target; the speed is derived from it
+scene_seconds = 180      # target; the speed is derived from it
 min_speed = 120          # px/s at 1440 px height
-max_speed = 600          # px/s at 1440 px height
+max_speed = 300          # px/s at 1440 px height
 step_px = 0.5
 line_width = 1.2         # px at 1440 px height
 exposure = 0.35
@@ -328,26 +330,56 @@ Consequences for this project:
 1. **Window class**: every window uses Wayland app_id `org.omarchy.screensaver`
    (`winit` `WindowAttributesExtWayland::with_name`). This gives the existing window rules,
    lock handoff and dismissal tracking for free.
-2. **Launcher**: a script `tan-screensaver-launch` that exits early if a screensaver is
-   already running, respects `omarchy-toggle-enabled screensaver-off` unless given
-   `force`, and starts the binary.
-3. **Hooking into idle**: `omarchy-launch-screensaver` is called by name, and
+2. **Choice, not replacement**: Omarchy's own screensaver stays available, and is the
+   default. `tan-screensaver-select tan|omarchy` stores the choice as the Omarchy toggle
+   flag `tan-screensaver` (`~/.local/state/omarchy/toggles/`), so menu entries can test it
+   with `omarchy-toggle-enabled`.
+3. **Launcher**: `tan-screensaver-launch [force]` hands over to
+   `omarchy-launch-screensaver "$@"` unless tan-screensaver is chosen. Otherwise it exits
+   early if a screensaver is already running, respects
+   `omarchy-toggle-enabled screensaver-off` unless given `force`, and starts the binary
+   detached (`setsid -f`), appending its log (scene seeds) to
+   `~/.local/state/tan-screensaver/screensaver.log`. The running check matches the
+   command line, not the process name: names are cut to 15 characters, so the
+   launcher's own name reads as `tan-screensaver`.
+4. **Hooking into idle**: `omarchy-launch-screensaver` is called by name, and
    `/usr/share/omarchy/bin` comes before `~/.local/bin` in `PATH`, so shadowing it does
    not work. Never edit files under `/usr/share/omarchy`; updates overwrite them. Instead,
-   clone the idle plugin as a user plugin (`~/.config/omarchy/plugins/julien.idle`), change
-   its launch command to `tan-screensaver-launch`, and add `omarchy.idle` to
-   `disabledPlugins` in `shell.json`. This is the same pattern already used here for
-   `julien.background` cloned from `omarchy.background`. Read
-   `/usr/share/omarchy/shell/plugins/README.md` before doing this, and check after each
-   Omarchy update whether the upstream idle service changed.
-4. **Menu**: the Omarchy menu entry `system.screensaver` can be pointed at
-   `tan-screensaver-launch force` through `~/.config/omarchy/extensions/omarchy-menu.jsonc`.
-5. **Install**: `make install` (or a `scripts/install.sh`) builds in release mode and
-   copies the binary and launcher to `~/.local/bin`. The plugin clone is a separate,
-   explicit step (`scripts/install-omarchy-hook.sh`) because it changes the shell config,
-   and it must back up `shell.json` first. The clone is generated by that script from the
-   installed `omarchy.idle`; it is not published or installed as a plugin repository
-   through `omarchy plugin add`.
+   the idle plugin is cloned as a user plugin (`~/.config/omarchy/plugins/<user>.idle`)
+   with its launch command changed to `tan-screensaver-launch`, and enabled, which puts
+   `omarchy.idle` in `disabledPlugins` in `shell.json`. This is the same pattern already
+   used here for `julien.background` cloned from `omarchy.background`. Check after each
+   Omarchy update whether the upstream idle service changed, and re-run the hook script.
+   - The script writes the clone itself instead of calling `omarchy plugin clone`. That
+     command deletes its clone when the shell is slow to answer the enable request, even
+     though the shell has already switched `shell.json` over, which leaves no idle
+     service at all. This happened on the first install here.
+   - The idle service is `keepLoaded`: once loaded, a copy survives plugin reloads, even
+     if its directory is deleted. If two idle services ever run (two `service-ready`
+     lines per reload in `journalctl --user | grep "omarchy idle"`), `omarchy restart
+     shell` loads the plugins fresh. Writing `shell.json` in place (truncate, then
+     write) can make the shell read it half-written and load the built-in service next
+     to the clone; scripts must write it to a temporary file and rename it.
+5. **Menu**, through `~/.config/omarchy/extensions/omarchy-menu.jsonc`: Style >
+   Screensaver gets "Omarchy Text" and "Tan Trajectories", checked by the current
+   choice, and System > Screensaver runs `tan-screensaver-launch force`, so it starts
+   the chosen one. The menu parser (`plugins/menu/MenuModel.js`) strips only whole-line
+   comments and ignores the whole file, silently, if it does not parse, so the entries
+   sit between `// tan-screensaver begin` and `// tan-screensaver end` lines. It also
+   fills every missing field (the label becomes the id), so an entry that overrides a
+   default one gives all its fields, despite the file's own comment saying otherwise.
+   Check the file with that parser under Node after changing these lines.
+6. **Install**: `scripts/install.sh` builds in release mode and copies the binary,
+   `tan-screensaver-launch` and `tan-screensaver-select` to `~/.local/bin`. The hook is a
+   separate, explicit step (`scripts/install-omarchy-hook.sh`, `--remove` to undo)
+   because it changes the shell config. It backs up `shell.json`, the menu file and any
+   previous clone to `~/.local/state/tan-screensaver/backups/<time>/` first. The clone
+   is generated from the installed `omarchy.idle`; it is not published or installed as a
+   plugin repository through `omarchy plugin add`.
+7. **Existing helper**: `~/.local/bin/omarchy-screensaver-mouse-watch` (started from
+   `~/.config/hypr/autostart.lua`) dismisses Omarchy's terminal screensaver on pointer
+   motion. It finds the screensaver by command line, so it ignores tan-screensaver,
+   which handles motion itself.
 
 ## 6. Milestones
 

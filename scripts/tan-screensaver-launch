@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Start the screensaver chosen with tan-screensaver-select. Omarchy's own is started
+# through omarchy-launch-screensaver, unchanged. tan-screensaver mirrors it: nothing
+# happens if a screensaver is already up, and the screensaver-off toggle is respected
+# unless called with `force`.
+
+if ! omarchy-toggle-enabled tan-screensaver; then
+  exec omarchy-launch-screensaver "$@"
+fi
+
+# By command line: process names are cut to 15 characters, which makes this script's
+# own name match tan-screensaver.
+pgrep -f '^(\S*/)?tan-screensaver( |$)' >/dev/null && exit 0
+# Omarchy's own terminal screensaver, started from somewhere else.
+pgrep -f '[o]rg.omarchy.screensaver' >/dev/null && exit 0
+
+if omarchy-toggle-enabled screensaver-off && [[ ${1:-} != force ]]; then
+  exit 1
+fi
+
+# Each scene's seed is logged; keep them so a scene seen on screen can be recreated
+# with --snapshot.
+log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/tan-screensaver
+log=$log_dir/screensaver.log
+mkdir -p "$log_dir"
+if [[ -f $log ]] && (($(stat -c %s "$log") > 1000000)); then
+  tail -n 2000 "$log" >"$log.tmp" && mv "$log.tmp" "$log"
+fi
+echo "--- $(date -Iseconds)" >>"$log"
+
+# Detached, so the idle service's process ends at once and a restart of the shell does
+# not take the screensaver with it.
+setsid -f tan-screensaver >>"$log" 2>&1

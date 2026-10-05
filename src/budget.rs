@@ -93,11 +93,11 @@ mod tests {
     #[test]
     fn speed_hits_the_target_unless_clamped() {
         let s = Settings::default();
-        // 160 heads for 90 s at 300 px/s.
-        let length = 160.0 * 90.0 * 300.0;
-        assert!((speed_px(length, &s, 1440) - 300.0).abs() < 1e-9);
-        assert_eq!(speed_px(length, &s, 720), 300.0);
+        // 160 heads for 180 s at 200 px/s.
+        let length = 160.0 * 180.0 * 200.0;
+        assert!((speed_px(length, &s, 1440) - 200.0).abs() < 1e-9);
+        assert_eq!(speed_px(length, &s, 720), 150.0);
         assert_eq!(speed_px(1.0, &s, 1440), 120.0);
-        assert_eq!(speed_px(1e12, &s, 1080), 450.0);
+        assert_eq!(speed_px(1e12, &s, 1080), 225.0);
     }
 }
